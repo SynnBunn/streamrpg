@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Boss Battle RPG</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/comfy.js@latest/dist/comfy.min.js"></script>
+    
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: rgba(0, 0, 0, 0.4); 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; 
+        }
+
+        .leaderboard {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            width: 320px; 
+            pointer-events: auto;
+            border: 2px solid #ef4444;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+        }
+
+        #title-area {
+            position: absolute;
+            top: 10px;
+            left: 0; 
+            width: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        #buff-bar {
+            position: absolute;
+            top: 120px; 
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 20;
+        }
+        .buff-pill {
+            background: rgba(16, 185, 129, 0.9);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+            border: 1px solid #34d399;
+            box-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
+            animation: pulse 2s infinite;
+        }
+
+        #mission-report {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(15, 23, 42, 0.98);
+            border: 3px solid #facc15;
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            color: white;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 0 50px rgba(250, 204, 21, 0.5);
+            min-width: 500px;
+            pointer-events: auto;
+        }
+
+        /* --- SETTINGS PANEL --- */
+        #settings-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            top: auto;
+            left: auto;
+            transform: none;
+            background: rgba(17, 24, 39, 0.98);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            color: white;
+            z-index: 50;
+            border: 1px solid #4b5563;
+            width: 380px; 
+            pointer-events: auto;
+            display: none; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        #settings-btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            pointer-events: auto;
+            opacity: 0.9;
+            transition: all 0.3s;
+            z-index: 40;
+            cursor: pointer;
+        }
+        #settings-btn:hover { opacity: 1; transform: scale(1.1); }
+        
+        #settings-icon-img { display: block; }
+
+        .glass-text {
+            text-shadow: 0 0 15px rgba(239, 68, 68, 0.8);
+        }
+
+        .dmg-popup {
+            position: absolute;
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+            pointer-events: none;
+            animation: popup 1s forwards;
+            text-shadow: 0 0 3px black;
+            white-space: nowrap;
+        }
+
+        .mode-popup {
+            position: absolute;
+            color: #38bdf8;
+            font-weight: bold;
+            font-size: 14px;
+            pointer-events: none;
+            animation: popup 1.5s forwards;
+            white-space: nowrap;
+            text-shadow: 0 0 2px black;
+        }
+
+        @keyframes popup {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-40px) scale(1.2); opacity: 0; }
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        @keyframes flash-green {
+            0% { background-color: rgba(34, 197, 94, 0.5); }
+            100% { background-color: rgba(55, 65, 81, 1); }
+        }
+        .flash-success {
+            animation: flash-green 1s ease-out;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div id="ui-layer">
+        <!-- Title & Info Bubbles -->
+        <div id="title-area" class="animate-float flex flex-col items-center justify-center">
+            <h1 class="text-5xl font-black text-white tracking-tighter glass-text" style="color: #f87171; -webkit-text-stroke: 1.5px #991b1b;">BRB RPG</h1>
+            
+            <p class="text-xs text-red-300 font-bold mt-1 bg-black/60 px-4 py-1 rounded-full">
+                Type <span style="color: #ef4444">!sword</span>, <span style="color: #d946ef">!magic</span>, or <span style="color: #f97316">!heavy</span> to change attack type!
+            </p>
+
+            <p class="text-xs text-yellow-200 font-bold mt-1 bg-black/60 px-4 py-1 rounded-full">
+                Attack by talking in chat!
+            </p>
+        </div>
+
+        <!-- Active Buffs -->
+        <div id="buff-bar"></div>
+
+        <!-- Leaderboard -->
+        <div class="leaderboard hidden md:block">
+            <h3 class="text-lg font-bold mb-2 border-b border-red-500 pb-1 text-red-300 flex justify-between">
+                <span>Top Heroes</span>
+                <span id="party-count" class="text-xs bg-red-900 px-2 py-0.5 rounded text-white">Party: 0</span>
+            </h3>
+            <ul id="score-list" class="space-y-1 text-xs">
+                <li class="text-gray-400 italic">Waiting for heroes...</li>
+            </ul>
+        </div>
+
+        <!-- Settings Button -->
+        <div id="settings-btn" onclick="toggleSettings()">
+            <img id="settings-icon-img"
+                 src="https://avatars.githubusercontent.com/u/100243124?v=4" 
+                 alt="Settings" 
+                 title="Click to Configure"
+                 class="w-12 h-12 rounded-full shadow-[0_0_15px_rgba(239,68,68,0.6)] object-cover bg-gray-800">
+        </div>
+    </div>
+
+    <!-- Mission Report -->
+    <div id="mission-report">
+        <h2 class="text-4xl font-black text-yellow-400 mb-2">MISSION COMPLETE</h2>
+        <div class="text-6xl font-bold text-white mb-6" id="report-level">LEVEL 1</div>
+        
+        <div class="grid grid-cols-2 gap-4 text-left mb-6 bg-black/30 p-4 rounded-lg">
+            <div>
+                <p class="text-gray-400 text-sm">Total Damage</p>
+                <p class="text-2xl font-mono text-red-400" id="report-total-dmg">0</p>
+            </div>
+            <div>
+                <p class="text-gray-400 text-sm">Heroes</p>
+                <p class="text-2xl font-mono text-blue-400" id="report-heroes">0</p>
+            </div>
+        </div>
+
+        <div class="mb-6">
+            <p class="text-yellow-500 font-bold text-lg mb-2">👑 MVP 👑</p>
+            <div class="flex items-center justify-center space-x-3">
+                <div id="report-mvp-avatar" class="w-16 h-16 rounded-full bg-gray-700 border-2 border-yellow-400 overflow-hidden"></div>
+                <div class="text-left">
+                    <p class="text-2xl font-bold text-white" id="report-mvp-name">None</p>
+                    <p class="text-sm text-gray-400" id="report-mvp-score">0 DMG</p>
+                </div>
+            </div>
+        </div>
+
+        <button onclick="resetBattle()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-full transition text-xl w-full">
+            NEXT RAID
+        </button>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-panel">
+        <h2 class="text-2xl font-bold mb-4 text-red-400">Battle Settings</h2>
+        
+        <div id="connection-status" class="mb-4 text-sm font-mono p-2 bg-black/40 rounded border border-gray-600 text-gray-400">
+            Status: Idle
+        </div>
+
+        <div class="mb-4">
+            <label class="block text-sm font-bold mb-1">Twitch Channel</label>
+            <input type="text" id="channel-input" placeholder="Twitch Username" class="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-red-500 text-white">
+        </div>
+
+        <!-- AUTO ASSIGN INFO -->
+        <div class="bg-blue-900/30 p-3 rounded mb-4 border border-blue-700 shadow-inner">
+            <div class="flex justify-between items-center mb-1">
+                <p class="text-xs text-blue-300 font-bold">How to set Channel Redeems</p>
+            </div>
+            <div class="text-[10px] text-gray-400 leading-tight">
+                While this menu is open, redeem your rewards in chat. The game will automatically fill the empty slots below in order!
+            </div>
+        </div>
+
+        <div class="mb-4 pt-2">
+            <div class="flex justify-between items-end mb-2">
+                <p class="text-xs text-gray-300 font-bold uppercase">Assign Rewards</p>
+                <button onclick="clearRewardIds()" class="text-[9px] text-red-400 hover:text-red-300 underline">Clear All</button>
+            </div>
+            
+            <div class="space-y-3">
+                <!-- Auto Turret -->
+                <div>
+                    <label class="text-[10px] text-gray-400 block mb-1">1. Auto-Attack (30s) ID</label>
+                    <input type="text" id="reward-auto-id" placeholder="Waiting for redemption..." class="w-full p-2 text-xs rounded bg-gray-700 border border-gray-600 text-white transition-colors duration-500" readonly>
+                </div>
+
+                <!-- Flurry -->
+                <div>
+                    <label class="text-[10px] text-gray-400 block mb-1">2. Flurry Attack ID</label>
+                    <input type="text" id="reward-flurry-id" placeholder="Waiting for redemption..." class="w-full p-2 text-xs rounded bg-gray-700 border border-gray-600 text-white transition-colors duration-500" readonly>
+                </div>
+
+                <!-- Nuke -->
+                <div>
+                    <label class="text-[10px] text-gray-400 block mb-1">3. Gigantify (Boulder) ID</label>
+                    <input type="text" id="reward-nuke-id" placeholder="Waiting for redemption..." class="w-full p-2 text-xs rounded bg-gray-700 border border-gray-600 text-white transition-colors duration-500" readonly>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-4 border-t border-gray-600 pt-4">
+            <label class="block text-sm font-bold mb-2">Owncast Server</label>
+            <input type="text" id="owncast-input" placeholder="e.g. https://watch.myowncast.xyz" class="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-red-500 text-white">
+        </div>
+
+        <div class="mb-6">
+            <label class="flex items-center space-x-3 cursor-pointer">
+                <input type="checkbox" id="auto-mode-check" class="form-checkbox h-5 w-5 text-red-600">
+                <span class="text-white font-medium">Enable Auto-Bot Mode</span>
+            </label>
+            <p class="text-xs text-gray-400 mt-1 ml-8">Simulates battles for testing.</p>
+        </div>
+
+        <div class="flex space-x-3">
+            <button onclick="saveAndClose()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition">
+                Resume / Save
+            </button>
+            <button onclick="endBattle()" class="flex-1 bg-red-900 hover:bg-red-800 text-white font-bold py-2 px-4 rounded transition border border-red-500">
+                End Battle
+            </button>
+        </div>
+        
+        <!-- Dev Tools -->
+        <div class="mt-4 pt-4 border-t border-gray-700 text-center space-x-2">
+             <button onclick="spawnBall('DevHero', 'attack')" class="text-xs text-gray-400 hover:text-yellow-400 underline">Sim Attack</button>
+             <button onclick="triggerSpecial('DevHero', 'flurry')" class="text-xs text-gray-400 hover:text-blue-400 underline">Sim Flurry</button>
+             <button onclick="localStorage.removeItem('streamBossUsers'); location.reload();" class="text-xs text-red-500 hover:text-red-300 underline ml-4">Reset Progress</button>
+        </div>
+    </div>
+
+    <script>
+        const GAME_CONFIG = {
+            ballSize: 20, 
+            bossBaseHP: 30000, 
+            colors: ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#3b82f6', '#d946ef'],
+            maxBallAge: 15000,
+            userCooldownMs: 1500
+        };
+
+        // --- BOSS DATA ---
+        const BOSS_BASES = [
+            { name: "Rat King", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/rat_king.png" }, 
+            { name: "Slime", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/slime.png" },
+            { name: "Golem", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/golem.png" },
+            { name: "Dragon", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/dragon.png" },
+            { name: "Warlock", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/warlock.png" },
+            { name: "Behemoth", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/behemoth.png" },
+            { name: "Hydra", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/hydra.png" },
+            { name: "Lich", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/lich.png" },
+            { name: "Pheonix", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/pheonix.png" }
+        ];
+
+        const RARE_BOSSES = [
+            { name: "Golden Slime", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/golden_slime.png", buff: "xp", buffName: "DOUBLE XP" },
+            { name: "SleepySyntax", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/synn.png", buff: "xp", buffName: "MOAR XP" },
+            { name: "Noti The Orc", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/noti.png", buff: "dmg", buffName: "SUPER BUFF!!" },
+            { name: "Time Keeper", image: "https://raw.githubusercontent.com/SynnBunn/streamrpg/main/time_keeper.png", buff: "dmg", buffName: "DOUBLE DAMAGE" }
+        ];
+
+        const BOSS_MODIFIERS = [
+            { prefix: "Infernal",   weakness: "magic",  resistance: "heavy",  color: "#ef4444", tint: "rgba(239, 68, 68, 0.4)" },
+            { prefix: "Glacial",    weakness: "heavy",  resistance: "attack", color: "#3b82f6", tint: "rgba(59, 130, 246, 0.4)" },
+            { prefix: "Armored",    weakness: "heavy",  resistance: "attack", color: "#57534e", tint: "rgba(87, 83, 78, 0.4)" },
+            { prefix: "Spectral",   weakness: "attack", resistance: "heavy",  color: "#a855f7", tint: "rgba(168, 85, 247, 0.4)" },
+            { prefix: "Toxic",      weakness: "magic",  resistance: "attack", color: "#22c55e", tint: "rgba(34, 197, 94, 0.4)" },
+            { prefix: "Enraged",    weakness: "attack", resistance: "magic",  color: "#f97316", tint: "rgba(249, 115, 22, 0.4)" }
+        ];
+
+        const CLASSES = {
+            "Adventurer": { color: "#9ca3af", icon: "⚔️", req: {}, bonus: {} },
+            "Warrior":    { color: "#ef4444", icon: "🗡️", req: { attack: 10 }, bonus: { attack: 1.2 } },
+            "Mage":       { color: "#a855f7", icon: "🔮", req: { magic: 10 }, bonus: { magic: 1.2 } },
+            "Heavy":      { color: "#ea580c", icon: "🛡️", req: { heavy: 10 }, bonus: { heavy: 1.2 } },
+            "Berserker":  { color: "#7f1d1d", icon: "🩸", req: { heavy: 30, attack: 10 }, bonus: { heavy: 1.4, attack: 1.1 } },
+            "Sorcerer":   { color: "#7c3aed", icon: "✨", req: { magic: 30 }, bonus: { magic: 1.5 } },
+            "Paladin":    { color: "#facc15", icon: "⚜️", req: { attack: 20, heavy: 20 }, bonus: { attack: 1.2, heavy: 1.2 } },
+            "Spellblade": { color: "#2dd4bf", icon: "🗡️✨", req: { attack: 20, magic: 20 }, bonus: { attack: 1.2, magic: 1.2 } },
+            "Warlock":    { color: "#4c1d95", icon: "💀", req: { magic: 20, heavy: 20 }, bonus: { magic: 1.2, heavy: 1.2 } },
+            "Grandmaster":{ color: "#fbbf24", icon: "👑", req: { attack: 100, magic: 100, heavy: 100 }, bonus: { attack: 1.5, magic: 1.5, heavy: 1.5 } },
+            "Ninja":      { color: "#171717", icon: "🥷", req: { attack: 50, criticals: 10 }, bonus: { attack: 1.4, critChance: 0.2 } }
+        };
+
+        // --- PERSISTENCE ---
+        let userDatabase = JSON.parse(localStorage.getItem('streamBossUsers')) || {};
+
+        function getUserData(username) {
+            if (!userDatabase[username]) {
+                userDatabase[username] = {
+                    xp: 0, level: 1, class: "Adventurer",
+                    attackMode: "attack", // Default attack mode
+                    autoEnd: 0, // For Auto-Attacker reward
+                    stats: { attack: 0, magic: 0, heavy: 0, criticals: 0 }
+                };
+            }
+            if(!userDatabase[username].attackMode) userDatabase[username].attackMode = "attack";
+            if(!userDatabase[username].autoEnd) userDatabase[username].autoEnd = 0;
+            return userDatabase[username];
+        }
+
+        function saveUserData() {
+            localStorage.setItem('streamBossUsers', JSON.stringify(userDatabase));
+        }
+
+        function addXp(username, amount) {
+            const user = getUserData(username);
+            const scaledAmount = Math.floor(amount * (1 + (bossLevel * 0.1)));
+            
+            if (globalBuffs.xp > Date.now()) {
+                user.xp += scaledAmount * 2;
+            } else {
+                user.xp += scaledAmount;
+            }
+
+            const newLevel = Math.floor(Math.sqrt(user.xp / 100)) + 1;
+            if (newLevel > user.level) user.level = newLevel;
+            saveUserData();
+        }
+
+        function recordMove(username, moveType) {
+            const user = getUserData(username);
+            if (user.stats[moveType] !== undefined) user.stats[moveType]++;
+            checkClassEvolution(user);
+            saveUserData();
+        }
+
+        function checkClassEvolution(user) {
+            const classNames = Object.keys(CLASSES).reverse(); 
+            for (let cls of classNames) {
+                const req = CLASSES[cls].req;
+                let qualified = true;
+                for (let stat in req) {
+                    if ((user.stats[stat] || 0) < req[stat]) {
+                        qualified = false;
+                        break;
+                    }
+                }
+                if (qualified) {
+                    if (user.class !== cls) user.class = cls;
+                    break; 
+                }
+            }
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+            return num.toString();
+        }
+
+        // --- AVATAR FETCHING ---
+        const avatarCache = {};
+
+        async function fetchTwitchAvatar(username) {
+            if (avatarCache[username]) return avatarCache[username];
+            try {
+                const response = await fetch(`https://api.ivr.fi/v2/twitch/user?login=${username}`);
+                const data = await response.json();
+                if (data && data.length > 0 && data[0].logo) {
+                    const url = data[0].logo;
+                    avatarCache[username] = url;
+                    return url;
+                }
+            } catch(e) {}
+            return null;
+        }
+
+        // --- AUDIO ENGINE ---
+        const AudioEngine = {
+            ctx: new (window.AudioContext || window.webkitAudioContext)(),
+            enabled: true,
+            safeResume: function() {
+                if (this.enabled && this.ctx.state === 'suspended') {
+                    this.ctx.resume().catch(e => console.log("Audio resume blocked"));
+                }
+            },
+            playTone: function(freq, type, duration, vol=0.1) {
+                try {
+                    this.safeResume();
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch(e) { }
+            },
+            playShoot: function() { this.playTone(600, 'square', 0.1, 0.05); },
+            playMagic: function() { this.playTone(900, 'sine', 0.3, 0.05); },
+            playHeavy: function() { this.playTone(200, 'sawtooth', 0.4, 0.05); },
+            playHit: function() { this.playTone(100, 'square', 0.1, 0.1); },
+            playResist: function() { this.playTone(80, 'sawtooth', 0.1, 0.1); },
+            playCrit: function() { this.playTone(1200, 'square', 0.1, 0.1); },
+            playBossDeath: function() { 
+                this.playTone(150, 'sawtooth', 1.0, 0.2);
+                setTimeout(() => this.playTone(100, 'square', 1.0, 0.2), 200);
+            },
+            playShockwave: function() { this.playTone(50, 'sawtooth', 1.0, 0.3); },
+            playTeleport: function() { this.playTone(800, 'sine', 0.2, 0.2); },
+            playMinionDeath: function() { this.playTone(400, 'square', 0.1, 0.1); },
+            playBuff: function() { 
+                this.playTone(500, 'sine', 0.2, 0.1); 
+                setTimeout(() => this.playTone(800, 'sine', 0.4, 0.1), 150); 
+            }
+        };
+
+        let engine, render, runner;
+        let owncastSocket = null;
+        let autoModeInterval = null, despawnInterval = null, bossAiInterval = null, autoAttackInterval = null;
+        let scores = {};
+        let cooldowns = {}; 
+        let isBattleActive = true;
+        let globalBuffs = { xp: 0, dmg: 0 }; 
+        let rewardIds = { auto: "", flurry: "", nuke: "" };
+        let lastDetectedReward = null; 
+        
+        let bossBody = null;
+        let minions = []; 
+        let currentBossConfig = { name: "Boss", weakness: "none", resistance: "none", color: "#7f1d1d", tint: null, isRare: false, spawnTime: 0 };
+        let bossHP = GAME_CONFIG.bossBaseHP;
+        let maxHP = GAME_CONFIG.bossBaseHP;
+        let bossLevel = 1;
+        let hitFlashTimer = 0;
+        let bossCharge = 0; 
+
+        function initGame() {
+            const Engine = Matter.Engine, Render = Matter.Render, Runner = Matter.Runner,
+                  Bodies = Matter.Bodies, Composite = Matter.Composite, Events = Matter.Events;
+
+            engine = Engine.create();
+            engine.world.gravity.y = 0; 
+
+            const canvas = document.getElementById('game-canvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            render = Render.create({
+                canvas: canvas,
+                engine: engine,
+                options: {
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    wireframes: false,
+                    background: 'transparent',
+                    pixelRatio: window.devicePixelRatio
+                }
+            });
+
+            Events.on(render, 'afterRender', function() {
+                if (!isBattleActive) return;
+                const ctx = render.context;
+                const now = Date.now();
+
+                const buffBar = document.getElementById('buff-bar');
+                let buffHtml = '';
+                if (globalBuffs.xp > now) buffHtml += `<div class="buff-pill">2x XP (${Math.ceil((globalBuffs.xp - now)/1000)}s)</div>`;
+                if (globalBuffs.dmg > now) buffHtml += `<div class="buff-pill">2x DMG (${Math.ceil((globalBuffs.dmg - now)/1000)}s)</div>`;
+                buffBar.innerHTML = buffHtml;
+                
+                if (bossBody) {
+                    const barW = 200;
+                    const barH = 15;
+                    const x = bossBody.position.x - barW / 2;
+                    const y = bossBody.position.y - 120;
+
+                    // Tint Overlay
+                    if (bossBody.render.sprite && bossBody.render.sprite.texture && currentBossConfig.tint) {
+                        try {
+                            const sprite = bossBody.render.sprite;
+                            const w = (sprite.xScale * 100) || 170; 
+                            const h = (sprite.yScale * 100) || 170;
+
+                            ctx.save();
+                            ctx.globalCompositeOperation = "source-atop";
+                            ctx.fillStyle = currentBossConfig.tint;
+                            
+                            const drawSize = 250; 
+                            ctx.fillRect(
+                                bossBody.position.x - (drawSize/2), 
+                                bossBody.position.y - (drawSize/2), 
+                                drawSize, 
+                                drawSize
+                            );
+                            
+                            ctx.restore();
+                        } catch(e) {}
+                    }
+
+                    // HP Bar
+                    ctx.fillStyle = "rgba(0,0,0,0.8)";
+                    ctx.fillRect(x, y, barW, barH);
+                    const hpPercent = Math.max(0, bossHP / maxHP);
+                    ctx.fillStyle = hpPercent > 0.5 ? "#22c55e" : (hpPercent > 0.2 ? "#eab308" : "#ef4444");
+                    ctx.fillRect(x + 2, y + 2, (barW - 4) * hpPercent, barH - 4);
+
+                    if (bossCharge > 0) {
+                        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+                        ctx.fillRect(x, y + barH + 2, barW * (bossCharge/100), 4);
+                    }
+
+                    ctx.textAlign = "center";
+                    ctx.shadowColor = "black";
+                    ctx.shadowBlur = 4;
+                    
+                    ctx.fillStyle = currentBossConfig.isRare ? "#facc15" : "white";
+                    ctx.font = "bold 16px Arial";
+                    ctx.fillText(`${currentBossConfig.name} (Lvl ${bossLevel})`, bossBody.position.x, y - 25);
+                    
+                    if(currentBossConfig.isRare) {
+                        const limit = currentBossConfig.timeLimit || 60;
+                        const elapsed = Math.floor((Date.now() - currentBossConfig.spawnTime)/1000);
+                        const timeLeft = Math.max(0, limit - elapsed);
+                        
+                        if(timeLeft > 0) ctx.fillText(`TIME BONUS: ${timeLeft}s`, bossBody.position.x, y + barH + 25);
+                    } else if(currentBossConfig.weakness !== 'none') {
+                        ctx.font = "bold 12px Arial";
+                        ctx.fillStyle = currentBossConfig.color; 
+                        const weakText = currentBossConfig.weakness === 'attack' ? 'SWORD' : currentBossConfig.weakness.toUpperCase();
+                        ctx.fillText(`WEAK: !${weakText}`, bossBody.position.x, y - 10);
+                    }
+                    ctx.shadowBlur = 0;
+                }
+
+                Composite.allBodies(engine.world).forEach(body => {
+                    if (body.label === 'ball') {
+                        const yOffset = body.render.sprite && body.render.sprite.texture ? (body.circleRadius * 2) + 5 : 0;
+                        ctx.fillStyle = "white";
+                        ctx.font = "bold 12px Arial";
+                        ctx.textAlign = "center";
+                        ctx.shadowColor = "black";
+                        ctx.shadowBlur = 3;
+                        ctx.fillText(body.username.substring(0, 10), body.position.x, body.position.y + yOffset);
+                        ctx.font = "10px Arial";
+                        ctx.fillStyle = "#e5e7eb";
+                        ctx.fillText(`[Lvl ${body.userLevel}] ${body.userClass}`, body.position.x, body.position.y + yOffset + 12);
+                        ctx.shadowBlur = 0;
+                    }
+                });
+
+                if (bossBody) {
+                    if (bossBody.render.sprite && bossBody.render.sprite.texture) {
+                        if (bossCharge > 0) {
+                            const shake = (Math.random() - 0.5) * 0.1; 
+                            Matter.Body.setAngle(bossBody, shake);
+                        } else {
+                            Matter.Body.setAngle(bossBody, 0); 
+                        }
+                    } else {
+                        Matter.Body.rotate(bossBody, 0.01 + (bossCharge/5000)); 
+                    }
+
+                    if (hitFlashTimer > 0) {
+                        bossBody.render.opacity = 0.5;
+                        hitFlashTimer--;
+                    } else {
+                        bossBody.render.opacity = 1;
+                    }
+                }
+
+                if(minions.length > 0 && bossBody) {
+                    const time = Date.now() * 0.001;
+                    minions.forEach((minion, index) => {
+                        const angle = time + (index * (Math.PI * 2 / minions.length));
+                        const dist = 140; 
+                        const mx = bossBody.position.x + Math.cos(angle) * dist;
+                        const my = bossBody.position.y + Math.sin(angle) * dist;
+                        Matter.Body.setPosition(minion, { x: mx, y: my });
+                        Matter.Body.rotate(minion, 0.1);
+                    });
+                }
+            });
+
+            spawnBoss();
+            Render.run(render);
+            runner = Runner.create();
+            Runner.run(runner, engine);
+
+            startDespawnCheck();
+            startBossAI();
+            startAutoAttacker(); 
+
+            Events.on(engine, 'collisionStart', function(event) {
+                if (!isBattleActive) return;
+                try {
+                    event.pairs.forEach(pair => {
+                        const bodyA = pair.bodyA;
+                        const bodyB = pair.bodyB;
+                        
+                        const ball = bodyA.label === 'ball' ? bodyA : (bodyB.label === 'ball' ? bodyB : null);
+                        const boss = bodyA.label === 'boss' ? bodyA : (bodyB.label === 'boss' ? bodyB : null);
+                        const minion = bodyA.label === 'minion' ? bodyA : (bodyB.label === 'minion' ? bodyB : null);
+
+                        if (ball && boss) {
+                            let rawDmg = Math.max(1, Math.floor(Matter.Vector.magnitude(ball.velocity) * ball.mass * 2));
+                            const userData = getUserData(ball.username);
+                            const userClass = CLASSES[userData.class] || CLASSES.Adventurer;
+                            
+                            rawDmg = rawDmg * (1 + (userData.level * 0.02));
+
+                            if (globalBuffs.dmg > Date.now()) rawDmg *= 2;
+
+                            let type = ball.attackType || 'attack';
+                            let multiplier = userClass.bonus[type] || 1.0;
+                            let feedbackText = "";
+
+                            if (currentBossConfig.weakness === type) {
+                                multiplier *= 2.0;
+                                feedbackText = "WEAKNESS! ";
+                            }
+                            else if (currentBossConfig.resistance === type) {
+                                multiplier *= 0.5;
+                                feedbackText = "RESISTED ";
+                            }
+
+                            let finalDmg = Math.floor(rawDmg * multiplier);
+                            const cap = Math.ceil(maxHP * 0.05);
+                            if (finalDmg > cap) finalDmg = cap;
+
+                            let color = "white";
+                            const critChance = userClass.bonus.critChance || 0.1; 
+                            if (Math.random() < critChance) {
+                                finalDmg *= 2;
+                                color = "#facc15";
+                                spawnPopup(boss.position.x, boss.position.y, feedbackText + "CRIT " + formatNumber(finalDmg), color);
+                                recordMove(ball.username, 'criticals');
+                                AudioEngine.playCrit();
+                            } else {
+                                if(type==='magic') color="#d946ef";
+                                if(type==='heavy') color="#fb923c";
+                                if (feedbackText.includes("RESISTED")) {
+                                    spawnPopup(boss.position.x, boss.position.y, "RESISTED (" + formatNumber(finalDmg) + ")", "gray");
+                                    AudioEngine.playResist();
+                                } else {
+                                    spawnPopup(boss.position.x, boss.position.y, (feedbackText ? "⚡ " : "") + formatNumber(finalDmg), color);
+                                    AudioEngine.playHit();
+                                }
+                            }
+
+                            takeDamage(ball.username, finalDmg);
+                            addXp(ball.username, 20 + Math.floor(finalDmg/20)); 
+                        }
+
+                        if (ball && minion) {
+                            Matter.Composite.remove(engine.world, minion);
+                            minions = minions.filter(m => m !== minion);
+                            spawnPopup(minion.position.x, minion.position.y, "MINION DESTROYED", "gray");
+                            AudioEngine.playMinionDeath();
+                        }
+                    });
+                } catch(e) { console.error("Collision Error", e); }
+            });
+
+            window.addEventListener('resize', () => {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                if(bossBody) Matter.Body.setPosition(bossBody, { x: canvas.width/2, y: canvas.height/2 });
+            });
+        }
+
+        // --- GAME LOOPS ---
+
+        function startBossAI() {
+            if (bossAiInterval) clearInterval(bossAiInterval);
+            bossAiInterval = setInterval(() => {
+                if (!isBattleActive || !bossBody) return;
+                
+                bossCharge += 10;
+                if (bossCharge >= 100) {
+                    bossCharge = 0;
+                    
+                    const rand = Math.random();
+                    if (rand < 0.6) {
+                        AudioEngine.playShockwave();
+                        spawnPopup(bossBody.position.x, bossBody.position.y, "MEGA SHOCKWAVE!", "red");
+                        const bodies = Matter.Composite.allBodies(engine.world);
+                        bodies.forEach(b => {
+                            if (b.label === 'ball') {
+                                const forceVec = Matter.Vector.sub(b.position, bossBody.position);
+                                Matter.Body.applyForce(b, b.position, Matter.Vector.mult(Matter.Vector.normalise(forceVec), 0.4));
+                            }
+                        });
+                    }
+                    else if (rand < 0.8) {
+                        AudioEngine.playTeleport();
+                        spawnPopup(bossBody.position.x, bossBody.position.y, "WARP!", "#60a5fa");
+                        const dx = (Math.random() - 0.5) * 200;
+                        const dy = (Math.random() - 0.5) * 200;
+                        const centerX = window.innerWidth / 2;
+                        const centerY = window.innerHeight / 2;
+                        Matter.Body.setPosition(bossBody, { x: centerX + dx, y: centerY + dy });
+                    }
+                    else {
+                        spawnPopup(bossBody.position.x, bossBody.position.y, "BERSERK!", "#f97316");
+                        Matter.Body.setAngularVelocity(bossBody, 0.5); 
+                    }
+                }
+            }, 1000);
+        }
+
+        // Handles the "Auto-Attacker" Reward logic
+        function startAutoAttacker() {
+            if (autoAttackInterval) clearInterval(autoAttackInterval);
+            autoAttackInterval = setInterval(() => {
+                if (!isBattleActive) return;
+                const now = Date.now();
+                
+                Object.keys(userDatabase).forEach(username => {
+                    const user = userDatabase[username];
+                    if (user.autoEnd && user.autoEnd > now) {
+                        if (Math.random() < 0.2) { 
+                             spawnBall(username, user.attackMode, true);
+                        }
+                    }
+                });
+            }, 800);
+        }
+
+        function startDespawnCheck() {
+            if (despawnInterval) clearInterval(despawnInterval);
+            despawnInterval = setInterval(() => {
+                const now = Date.now();
+                Matter.Composite.allBodies(engine.world).forEach(body => {
+                    if (body.label === 'ball' && (now - body.createdAt > GAME_CONFIG.maxBallAge)) {
+                        Matter.Composite.remove(engine.world, body);
+                    }
+                });
+            }, 5000); 
+        }
+
+        function spawnPopup(x, y, text, color, isMode = false) {
+            const el = document.createElement('div');
+            el.className = isMode ? 'mode-popup' : 'dmg-popup';
+            el.textContent = text;
+            el.style.left = (x + (Math.random()*40-20)) + 'px';
+            el.style.top = (y - 50) + 'px';
+            el.style.color = color;
+            document.getElementById('ui-layer').appendChild(el);
+            setTimeout(() => el.remove(), isMode ? 1500 : 1000);
+        }
+
+        function spawnBoss() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            if (bossBody) Matter.Composite.remove(engine.world, bossBody);
+            minions.forEach(m => Matter.Composite.remove(engine.world, m));
+            minions = [];
+
+            let isRare = Math.random() < 0.1;
+            let base, mod;
+
+            if (isRare) {
+                base = RARE_BOSSES[Math.floor(Math.random() * RARE_BOSSES.length)];
+                mod = { prefix: "Ancient", weakness: "none", resistance: "none", color: "#facc15", tint: null };
+            } else {
+                base = BOSS_BASES[Math.floor(Math.random() * BOSS_BASES.length)];
+                mod = BOSS_MODIFIERS[Math.floor(Math.random() * BOSS_MODIFIERS.length)];
+            }
+            
+            const dynamicTimeLimit = 60 + (bossLevel * 15);
+
+            currentBossConfig = {
+                name: isRare ? base.name : `${mod.prefix} ${base.name}`,
+                weakness: mod.weakness,
+                resistance: mod.resistance,
+                color: mod.color,
+                tint: mod.tint,
+                image: base.image,
+                isRare: isRare,
+                buff: base.buff,
+                buffName: base.buffName,
+                spawnTime: Date.now(),
+                timeLimit: dynamicTimeLimit
+            };
+
+            const bossRadius = 80;
+            bossBody = Matter.Bodies.polygon(width / 2, height / 2, 6, bossRadius, {
+                isStatic: true,
+                label: 'boss',
+                render: { fillStyle: '#4b5563', strokeStyle: '#000', lineWidth: 2 }
+            });
+            Matter.Composite.add(engine.world, bossBody);
+
+            if (currentBossConfig.image) {
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                img.onload = function() {
+                    if(bossBody) {
+                        const targetSize = (bossRadius * 2) + 10; 
+                        const scale = targetSize / img.width;
+                        
+                        bossBody.render.fillStyle = 'transparent';
+                        bossBody.render.strokeStyle = 'transparent';
+                        
+                        bossBody.render.sprite.texture = currentBossConfig.image;
+                        bossBody.render.sprite.xScale = scale;
+                        bossBody.render.sprite.yScale = scale;
+                    }
+                };
+                img.onerror = function() {
+                    console.error("Failed to load boss image:", currentBossConfig.image);
+                };
+                img.src = currentBossConfig.image;
+            }
+            
+            maxHP = Math.floor(GAME_CONFIG.bossBaseHP * (1 + (bossLevel * 0.5)));
+            if (isRare) maxHP *= 1.5;
+            bossHP = maxHP;
+
+            const minionCount = Math.floor(bossLevel / 10);
+            if (minionCount > 0) {
+                for(let i=0; i<minionCount; i++) {
+                    const m = Matter.Bodies.circle(0, 0, 15, {
+                        isStatic: true, label: 'minion',
+                        render: { fillStyle: '#94a3b8', strokeStyle: '#cbd5e1', lineWidth: 2 }
+                    });
+                    Matter.Composite.add(engine.world, m);
+                    minions.push(m);
+                }
+            }
+        }
+
+        function takeDamage(username, amount) {
+            if (!isBattleActive) return;
+            bossHP -= amount;
+            hitFlashTimer = 5;
+
+            if (!scores[username]) scores[username] = 0;
+            scores[username] += amount;
+            updateLeaderboard();
+
+            if (bossHP <= 0) {
+                AudioEngine.playBossDeath();
+                if (currentBossConfig.isRare) {
+                    const timeTaken = (Date.now() - currentBossConfig.spawnTime) / 1000;
+                    const limit = currentBossConfig.timeLimit || 60;
+                    if (timeTaken < limit) {
+                        const duration = 300000; 
+                        globalBuffs[currentBossConfig.buff] = Date.now() + duration;
+                        AudioEngine.playBuff();
+                        spawnPopup(bossBody.position.x, bossBody.position.y, `${currentBossConfig.buffName} ACTIVATED!`, "#22c55e");
+                    }
+                }
+                bossLevel++;
+                spawnPopup(bossBody.position.x, bossBody.position.y, "BOSS DEFEATED!", "red");
+                const bodies = Matter.Composite.allBodies(engine.world);
+                bodies.forEach(b => {
+                    if (b.label === 'ball') {
+                        const forceVec = Matter.Vector.sub(b.position, bossBody.position);
+                        Matter.Body.applyForce(b, b.position, Matter.Vector.mult(Matter.Vector.normalise(forceVec), 0.05));
+                    }
+                });
+                setTimeout(spawnBoss, 2000);
+            }
+        }
+
+        // --- COMMAND & REWARD LOGIC ---
+
+        function handleCommand(username, command) {
+            if (!isBattleActive) return;
+            const cmd = command.toLowerCase();
+
+            if (cmd.startsWith('!sword')) {
+                setAttackMode(username, 'attack');
+                return;
+            }
+            if (cmd.startsWith('!magic')) {
+                setAttackMode(username, 'magic');
+                return;
+            }
+            if (cmd.startsWith('!heavy')) {
+                setAttackMode(username, 'heavy');
+                return;
+            }
+            attemptAttack(username);
+        }
+
+        function setAttackMode(username, mode) {
+            const user = getUserData(username);
+            user.attackMode = mode;
+            saveUserData();
+            
+            let color = "#ef4444";
+            if(mode === 'magic') color = "#d946ef";
+            if(mode === 'heavy') color = "#f97316";
+
+            const x = Math.random() * window.innerWidth;
+            const y = window.innerHeight - 50;
+            spawnPopup(x, y, `${username} switched to ${mode.toUpperCase()}!`, color, true);
+        }
+
+        function attemptAttack(username) {
+            const now = Date.now();
+            const lastAct = cooldowns[username] || 0;
+            if (now - lastAct < GAME_CONFIG.userCooldownMs) return;
+            
+            cooldowns[username] = now;
+            const user = getUserData(username);
+            recordMove(username, user.attackMode);
+            spawnBall(username, user.attackMode);
+        }
+
+        // Triggered by Channel Points or Dev Buttons
+        function triggerSpecial(username, type) {
+            if (type === 'auto') {
+                const user = getUserData(username);
+                user.autoEnd = Date.now() + 30000;
+                saveUserData();
+                spawnPopup(window.innerWidth/2, window.innerHeight/2, `${username} ENABLED AUTO-TURRET!`, "#10b981", true);
+            }
+            else if (type === 'flurry') {
+                spawnPopup(window.innerWidth/2, window.innerHeight/2, `${username} USED FLURRY!`, "#3b82f6", true);
+                for(let i=0; i<15; i++) {
+                    setTimeout(() => {
+                        spawnBall(username, 'magic', true);
+                    }, i * 50);
+                }
+            }
+            else if (type === 'nuke') {
+                spawnPopup(window.innerWidth/2, window.innerHeight/2, `${username} GIGANTIFIED!`, "#f59e0b", true);
+                spawnBall(username, 'heavy', true, 5.0);
+            }
+        }
+
+        function spawnBall(username, type = 'attack', bypassCooldown = false, scaleMult = 1.0) {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const side = Math.floor(Math.random() * 4); 
+            let startX, startY;
+            const pad = 50;
+
+            if (side === 0) { startX = Math.random() * width; startY = -pad; }
+            else if (side === 1) { startX = width + pad; startY = Math.random() * height; }
+            else if (side === 2) { startX = Math.random() * width; startY = height + pad; }
+            else { startX = -pad; startY = Math.random() * height; }
+
+            let radius = GAME_CONFIG.ballSize;
+            let density = 0.04;
+            let restitution = 1.0;
+            let color = '#ffffff';
+            let speed = 10 + Math.random() * 5;
+
+            const userData = getUserData(username);
+            
+            if (type === 'magic') {
+                color = '#d946ef'; density = 0.02; speed *= 1.5; radius -= 4;
+                if(!bypassCooldown) AudioEngine.playMagic();
+            } else if (type === 'heavy') {
+                color = '#f97316'; density = 0.1; speed *= 0.6; radius += 5; restitution = 0.2;
+                if(!bypassCooldown) AudioEngine.playHeavy();
+            } else {
+                color = '#ef4444'; 
+                if(!bypassCooldown) AudioEngine.playShoot();
+            }
+
+            // Apply Special Scale
+            radius *= scaleMult;
+            if (scaleMult > 1) {
+                density *= 2; 
+                AudioEngine.playShockwave();
+            }
+            
+            const ball = Matter.Bodies.circle(startX, startY, radius, {
+                restitution: restitution,
+                friction: 0,
+                frictionAir: 0,
+                label: 'ball',
+                username: username,
+                userLevel: userData.level, 
+                userClass: userData.class, 
+                attackType: type, 
+                createdAt: Date.now(),
+                density: density,
+                render: { 
+                    fillStyle: color, 
+                    strokeStyle: '#fff', 
+                    lineWidth: 2 
+                }
+            });
+
+            const center = { x: width/2, y: height/2 };
+            const dir = Matter.Vector.sub(center, { x: startX, y: startY });
+            const normalized = Matter.Vector.normalise(dir);
+            Matter.Body.setVelocity(ball, Matter.Vector.mult(normalized, speed));
+
+            Matter.Composite.add(engine.world, ball);
+        }
+
+        function updateLeaderboard() {
+            const list = document.getElementById('score-list');
+            const countEl = document.getElementById('party-count');
+            const heroNames = Object.keys(scores);
+            
+            countEl.innerText = `Party: ${heroNames.length}`;
+
+            const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 8);
+            list.innerHTML = sorted.map(([name, score], index) => {
+                const userData = getUserData(name);
+                const classInfo = CLASSES[userData.class] || CLASSES.Adventurer;
+                
+                return `
+                <li class="flex justify-between items-center py-1 border-b border-gray-700">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-gray-300 text-[10px]">${index+1}.</span>
+                        <span class="text-base">${classInfo.icon}</span>
+                        <div>
+                            <span class="font-bold ${index === 0 ? 'text-yellow-400' : 'text-gray-300'} block leading-none">${name}</span>
+                            <span class="text-[9px] text-gray-500">Lvl ${userData.level} ${userData.class}</span>
+                        </div>
+                    </div>
+                    <span class="text-red-400 font-mono text-xs">${formatNumber(score)}</span>
+                </li>`;
+            }).join('');
+        }
+
+        async function endBattle() {
+            if (!isBattleActive) return;
+            isBattleActive = false;
+            
+            document.getElementById('settings-panel').style.display = 'none';
+            document.getElementById('mission-report').style.display = 'block';
+            
+            AudioEngine.playBossDeath();
+
+            const totalDmg = Object.values(scores).reduce((a, b) => a + b, 0);
+            const heroes = Object.keys(scores).length;
+            const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+            const mvp = sorted.length > 0 ? sorted[0] : ["None", 0];
+
+            document.getElementById('report-level').innerText = "LEVEL " + bossLevel;
+            document.getElementById('report-total-dmg').innerText = formatNumber(totalDmg);
+            document.getElementById('report-heroes').innerText = heroes;
+            document.getElementById('report-mvp-name').innerText = mvp[0];
+            document.getElementById('report-mvp-score').innerText = formatNumber(mvp[1]) + " DMG";
+            
+            const mvpImgDiv = document.getElementById('report-mvp-avatar');
+            mvpImgDiv.innerHTML = '<div class="w-full h-full bg-gray-800 animate-pulse"></div>';
+
+            if (mvp[0] !== "None") {
+                const name = mvp[0];
+                const fallbackUrl = `https://ui-avatars.com/api/?name=${name}&background=random&color=fff&size=128`;
+                
+                const twitchUrl = await fetchTwitchAvatar(name);
+                const finalUrl = twitchUrl || fallbackUrl;
+
+                mvpImgDiv.innerHTML = `
+                    <img src="${finalUrl}" class="w-full h-full object-cover">
+                `;
+            } else {
+                mvpImgDiv.innerHTML = "";
+            }
+        }
+
+        function resetBattle() {
+            isBattleActive = true;
+            scores = {};
+            cooldowns = {};
+            bossLevel = 1;
+            bossHP = GAME_CONFIG.bossBaseHP;
+            maxHP = GAME_CONFIG.bossBaseHP;
+            bossCharge = 0;
+            
+            Matter.Composite.clear(engine.world);
+            spawnBoss();
+            updateLeaderboard();
+            
+            document.getElementById('mission-report').style.display = 'none';
+        }
+
+        function updateStatus(text, type = 'info') {
+            const el = document.getElementById('connection-status');
+            el.textContent = text;
+            if (type === 'error') el.className = "mb-4 text-sm font-mono p-2 bg-red-900/40 rounded border border-red-600 text-red-200";
+            else if (type === 'success') el.className = "mb-4 text-sm font-mono p-2 bg-green-900/40 rounded border border-green-600 text-green-200";
+            else el.className = "mb-4 text-sm font-mono p-2 bg-black/40 rounded border border-gray-600 text-gray-400";
+        }
+
+        function toggleSettings() {
+            const panel = document.getElementById('settings-panel');
+            panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+        }
+
+        function copyRewardTo(targetId) {
+            if(!lastDetectedReward) {
+                alert("No reward detected yet! Redeem a reward in your chat to detect its ID.");
+                return;
+            }
+            document.getElementById(targetId).value = lastDetectedReward;
+        }
+
+        function clearRewardIds() {
+            document.getElementById('reward-auto-id').value = "";
+            document.getElementById('reward-flurry-id').value = "";
+            document.getElementById('reward-nuke-id').value = "";
+            rewardIds = { auto: "", flurry: "", nuke: "" };
+            
+            const channel = document.getElementById('channel-input').value.trim().toLowerCase();
+            const owncastUrl = document.getElementById('owncast-input').value.trim();
+            const autoMode = document.getElementById('auto-mode-check').checked;
+            
+            localStorage.setItem('streamBossSettings', JSON.stringify({ 
+                channel, owncastUrl, autoMode,
+                rewardIds: rewardIds
+            }));
+        }
+
+        async function applySettings() {
+            const channel = document.getElementById('channel-input').value.trim().toLowerCase();
+            const owncastUrl = document.getElementById('owncast-input').value.trim();
+            const autoMode = document.getElementById('auto-mode-check').checked;
+            
+            const autoId = document.getElementById('reward-auto-id').value.trim();
+            const flurryId = document.getElementById('reward-flurry-id').value.trim();
+            const nukeId = document.getElementById('reward-nuke-id').value.trim();
+            
+            localStorage.setItem('streamBossSettings', JSON.stringify({ 
+                channel, owncastUrl, autoMode,
+                rewardIds: { auto: autoId, flurry: flurryId, nuke: nukeId }
+            }));
+
+            rewardIds = { auto: autoId, flurry: flurryId, nuke: nukeId };
+
+            if (autoModeInterval) { clearInterval(autoModeInterval); autoModeInterval = null; }
+            if (owncastSocket) { owncastSocket.close(); owncastSocket = null; }
+            try { ComfyJS.Disconnect(); } catch(e) { }
+
+            AudioEngine.safeResume();
+
+            if (autoMode) startAutoMode();
+            if (channel) {
+                updateStatus(`Connecting to ${channel}...`);
+                ComfyJS.Init(channel);
+            }
+            if (owncastUrl) setupOwncast(owncastUrl);
+        }
+
+        function saveAndClose() {
+            applySettings();
+            toggleSettings();
+        }
+
+        function startAutoMode() {
+            const fakeNames = ["CoolCat", "Hero123", "BossSlayer", "ModGod", "Newbie"];
+            autoModeInterval = setInterval(() => {
+                if (!isBattleActive) return;
+                const name = fakeNames[Math.floor(Math.random() * fakeNames.length)];
+                attemptAttack(name); 
+            }, 800); 
+        }
+
+        // --- COMFYJS EVENTS ---
+
+        ComfyJS.onCommand = ( user, command, message, flags, extra ) => {
+            const displayName = extra.userState['display-name'] || user;
+            if (command === "endbattle" && (flags.broadcaster || flags.mod)) {
+                endBattle();
+                return;
+            }
+            handleCommand(displayName, "!" + command.toLowerCase());
+        };
+
+        ComfyJS.onChat = ( user, message, flags, self, extra ) => {
+            const displayName = extra.userState['display-name'] || user;
+            
+            if (extra.userState && extra.userState['custom-reward-id']) {
+                const rewardId = extra.userState['custom-reward-id'];
+                
+                lastDetectedReward = rewardId;
+                const snifferDisplay = document.getElementById('last-reward-display');
+                if(snifferDisplay) {
+                    snifferDisplay.innerHTML = `Detected: <span class="text-white font-bold">Unknown Reward</span><br><span class="text-[9px] font-mono text-blue-300 break-all">${rewardId}</span>`;
+                    snifferDisplay.classList.remove('italic');
+                    snifferDisplay.style.borderColor = "#3b82f6";
+                }
+
+                const panel = document.getElementById('settings-panel');
+                if(panel.style.display === 'block') {
+                    const autoField = document.getElementById('reward-auto-id');
+                    const flurryField = document.getElementById('reward-flurry-id');
+                    const nukeField = document.getElementById('reward-nuke-id');
+
+                    if(autoField.value === "") {
+                        autoField.value = rewardId;
+                        autoField.classList.add('flash-success');
+                        setTimeout(() => autoField.classList.remove('flash-success'), 1000);
+                    } else if(flurryField.value === "") {
+                        flurryField.value = rewardId;
+                        flurryField.classList.add('flash-success');
+                        setTimeout(() => flurryField.classList.remove('flash-success'), 1000);
+                    } else if(nukeField.value === "") {
+                        nukeField.value = rewardId;
+                        nukeField.classList.add('flash-success');
+                        setTimeout(() => nukeField.classList.remove('flash-success'), 1000);
+                    }
+                }
+
+                if (rewardId === rewardIds.auto) triggerSpecial(displayName, 'auto');
+                else if (rewardId === rewardIds.flurry) triggerSpecial(displayName, 'flurry');
+                else if (rewardId === rewardIds.nuke) triggerSpecial(displayName, 'nuke');
+            }
+
+            attemptAttack(displayName);
+        };
+
+        ComfyJS.onReward = ( user, reward, cost, message, extra ) => {
+            console.log("Reward redeemed:", user, reward, extra);
+            const displayName = extra.userState['display-name'] || user;
+            
+            const rewardId = extra.reward ? extra.reward.id : (extra.customRewardId || null);
+            
+            if (rewardId) {
+                lastDetectedReward = rewardId;
+                const snifferDisplay = document.getElementById('last-reward-display');
+                if(snifferDisplay) {
+                    snifferDisplay.innerHTML = `Detected: <span class="text-white font-bold">${reward}</span><br><span class="text-[9px] font-mono text-blue-300 break-all">${rewardId}</span>`;
+                    snifferDisplay.classList.remove('italic');
+                    snifferDisplay.style.borderColor = "#3b82f6";
+                }
+
+                const panel = document.getElementById('settings-panel');
+                if(panel.style.display === 'block') {
+                    const autoField = document.getElementById('reward-auto-id');
+                    const flurryField = document.getElementById('reward-flurry-id');
+                    const nukeField = document.getElementById('reward-nuke-id');
+
+                    const isDuplicate = [autoField.value, flurryField.value, nukeField.value].includes(rewardId);
+
+                    if (!isDuplicate) {
+                        if(autoField.value === "") {
+                            autoField.value = rewardId;
+                            autoField.classList.add('flash-success');
+                            setTimeout(() => autoField.classList.remove('flash-success'), 1000);
+                        } else if(flurryField.value === "") {
+                            flurryField.value = rewardId;
+                            flurryField.classList.add('flash-success');
+                            setTimeout(() => flurryField.classList.remove('flash-success'), 1000);
+                        } else if(nukeField.value === "") {
+                            nukeField.value = rewardId;
+                            nukeField.classList.add('flash-success');
+                            setTimeout(() => nukeField.classList.remove('flash-success'), 1000);
+                        }
+                    }
+                }
+
+                if (rewardId === rewardIds.auto) triggerSpecial(displayName, 'auto');
+                else if (rewardId === rewardIds.flurry) triggerSpecial(displayName, 'flurry');
+                else if (rewardId === rewardIds.nuke) triggerSpecial(displayName, 'nuke');
+            }
+        };
+
+        ComfyJS.onConnected = ( address, port, isFirstConnect ) => {
+            const channel = document.getElementById('channel-input').value;
+            updateStatus(`Connected: #${channel}`, 'success');
+        };
+        
+        function setupOwncast(url) {
+            let wsUrl = url.replace('https://', 'wss://').replace('http://', 'ws://');
+            if (!wsUrl.endsWith('/chat/ws')) { if (wsUrl.endsWith('/')) wsUrl = wsUrl.slice(0, -1); wsUrl += '/chat/ws'; }
+            try {
+                owncastSocket = new WebSocket(wsUrl);
+                owncastSocket.onopen = () => updateStatus(`Connected Owncast`, 'success');
+                owncastSocket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'CHAT') {
+                        const body = data.body.toLowerCase();
+                        if(body.startsWith('!')) handleCommand(data.user.displayName, body);
+                        else attemptAttack(data.user.displayName);
+                    }
+                };
+            } catch(e) { console.error(e); }
+        }
+
+        window.onload = function() {
+            initGame();
+            const saved = JSON.parse(localStorage.getItem('streamBossSettings')) || {};
+            document.getElementById('channel-input').value = saved.channel || '';
+            document.getElementById('owncast-input').value = saved.owncastUrl || '';
+            document.getElementById('auto-mode-check').checked = saved.autoMode || false;
+            
+            if(saved.rewardIds) {
+                document.getElementById('reward-auto-id').value = saved.rewardIds.auto || '';
+                document.getElementById('reward-flurry-id').value = saved.rewardIds.flurry || '';
+                document.getElementById('reward-nuke-id').value = saved.rewardIds.nuke || '';
+                rewardIds = saved.rewardIds;
+            }
+
+            const panel = document.getElementById('settings-panel');
+            panel.style.display = 'none'; 
+            
+            if(saved.channel || saved.autoMode) {
+                applySettings();
+            }
+        };
+    </script>
+</body>
+</html>
